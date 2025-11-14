@@ -114,6 +114,18 @@ impl List {
             }
         }
     }
+
+    // public accessor to return all tasks with their day and fields as owned data
+    // Returns a Vec of tuples: (DayOfWeek, id, title, time, desc)
+    pub fn all_tasks(&self) -> Vec<(DayOfWeek, usize, String, f64, String)> {
+        let mut out: Vec<(DayOfWeek, usize, String, f64, String)> = Vec::new();
+        for (day, tasks) in &self.schedule {
+            for task in tasks {
+                out.push((*day, task.id, task.title.clone(), task.time, task.desc.clone()));
+            }
+        }
+        out
+    }
 }
 
 
