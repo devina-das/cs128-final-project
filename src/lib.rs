@@ -1,151 +1,215 @@
 use indexmap::IndexMap;
+use std::cmp::Ordering;
+use enum_iterator::{all, Sequence};
 
-// repps the different days of the week
-#[derive(Hash, Eq, PartialEq, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
+pub enum SchedulerError {
+    InvalidTime
+}
+
+#[derive(Sequence, Hash, PartialEq, Eq, Debug, Clone, Copy)]
 pub enum DayOfWeek {
     Mon, Tue, Wed, Thu, Fri, Sat, Sun
 }
 
-// title is basically a quick description
-// time is when it takes place. 24-hour clock and 23:59 is repped as 23.59
-// desc is a more in-depth description
+impl ToString for DayOfWeek {
+    fn to_string(&self) -> String { 
+        match self {
+            DayOfWeek::Mon => String::from("Monday"),
+            DayOfWeek::Tue => String::from("Tuesday"),
+            DayOfWeek::Wed => String::from("Wednesday"),
+            DayOfWeek::Thu => String::from("Thursday"),
+            DayOfWeek::Fri => String::from("Friday"),
+            DayOfWeek::Sat => String::from("Saturday"),
+            DayOfWeek::Sun => String::from("Sunday")
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Time {
+    hour: usize,
+    mins: usize
+}
+impl Time {
+    pub fn new(time: String) -> Result<Self, SchedulerError> {
+        let parts: Vec<&str> = time.split(".").collect();
+        if parts.len() != 2 {
+            return Err(SchedulerError::InvalidTime);
+        }
+        let h = parts[0].parse::<usize>().unwrap();
+        let m = parts[1].parse::<usize>().unwrap();
+        if h > 23 || m > 59 {
+            return Err(SchedulerError::InvalidTime);
+        }
+        Ok(Self {
+            hour: h,
+            mins: m
+        })
+    }
+}
+
+impl ToString for Time {
+    fn to_string(&self) -> String {
+        let mut hour_disp = self.hour.to_string();
+        if self.hour < 10 {
+            hour_disp = String::from("0") + hour_disp.as_str();
+        }
+        let mut min_disp = self.mins.to_string();
+        if self.mins < 10 {
+            min_disp = String::from("0") + min_disp.as_str();
+        }
+        hour_disp + ":" + min_disp.as_str()
+    }
+}
+
+impl PartialEq for Time {
+    fn eq(&self, other: &Self) -> bool {
+        self.hour == other.hour && self.mins == other.mins
+    }
+}
+
+impl PartialOrd for Time {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        (self.hour, self.mins).partial_cmp(&(other.hour, other.mins))
+    }
+}
+
+pub enum TaskAttribute {
+    Title, Day, Time, Desc 
+}
+
+// CHANGED: time (f64) -> time (Time)
 #[derive(Debug, Clone)]
 struct Task {
     id: usize,
+    day: DayOfWeek,
     title: String,
-    time: f64,
+    time: Time,
     desc: String,
 }
 
-// was using HashMap at first, but did some searching online and IndexMap
-// seems better because it's ordered.
-pub struct List {
-    next_id: usize,
-    schedule: IndexMap<DayOfWeek, Vec<Task>>
-}
-
 impl Task {
-    // displays the task like this:
+    // DISPLAY TASK
     //      #0 - Task 1 @ 5.45
     //                This is our first task
     pub fn display(&self) {
-        println!("#{} - {} @ {}", self.id, self.title, self.time);
+        println!("#{} - {} @ {}", self.id, self.title, self.time.to_string());
         print!("          ");
         println!("{}", self.desc);
     }
 }
 
+pub struct List {
+    next_id: usize,
+    schedule: IndexMap<DayOfWeek, Vec<Task>>
+}
+
 impl List {
-
-    // makes a new list
-    // this is lowkey jank i know
-    pub fn new() -> List {
-        let mut week: IndexMap<DayOfWeek,Vec<Task>> = IndexMap::new();
-        week.insert(DayOfWeek::Mon, Vec::new());
-        week.insert(DayOfWeek::Tue, Vec::new());
-        week.insert(DayOfWeek::Wed, Vec::new());
-        week.insert(DayOfWeek::Thu, Vec::new());
-        week.insert(DayOfWeek::Fri, Vec::new());
-        week.insert(DayOfWeek::Sat, Vec::new());
-        week.insert(DayOfWeek::Sun, Vec::new());
-
-        List {
+    // CHANGED: simplified the function
+    pub fn new() -> Self {
+        Self {
             next_id : 0,
-            schedule: week
+            schedule: all::<DayOfWeek>().map(|day| (day, Vec::<Task>::new())).collect()
         }
     }
 
-    // adds a new task to the list in order of time
-    pub fn add_task(&mut self, day: DayOfWeek, title: String, time: f64, desc: String) {
-        if !check_time(time) {
-            println!("invalid time");
-            return;
-        }
-        let id = self.next_id;
-        let new_task = Task {id, title, time, desc};
-        self.schedule.get_mut(&day).unwrap().insert(self.next_id, new_task);
-        self.order_tasks();
+    // ADD TASK
+    pub fn add_task(&mut self, day: DayOfWeek, title: String, time: Time, desc: String) {
+        let new_task = Task {id: self.next_id, day: day, title: title, time: time, desc: desc};
+        let target_day = self.schedule.get_mut(&day).unwrap();
+        target_day.push(new_task);
+        target_day.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
         self.next_id += 1;
     }
 
 
-    // removes a task by the specified target id
+    // REMOVE TASK
     pub fn remove_task(&mut self, target_id: usize) {
-        for (_, tasks) in self.schedule.iter_mut() {
-            for idx in 0..tasks.len() {
-                if tasks[idx].id == target_id {
-                    tasks.remove(idx);
-                    return;
+        let task = self.get_task(target_id);
+        match task {
+            Some((day, idx)) => self.schedule.get_mut(&day).unwrap().remove(idx),
+            None => return
+        };
+    }
+
+    // EDIT TASK
+    pub fn edit_task(&mut self, id: usize, atb: TaskAttribute, new: String) {
+        let task = self.get_task(id);
+        match task {
+            Some((day, idx)) => {
+                match atb {
+                    TaskAttribute::Title => {
+                        self.schedule.get_mut(&day).unwrap()[idx].title = new;
+                    }
+                    TaskAttribute::Desc => {
+                        self.schedule.get_mut(&day).unwrap()[idx].desc = new;
+                    }
+                    TaskAttribute::Time => {
+                        let new_time = Time::new(new);
+                        match new_time {
+                            Ok(time) => {
+                                self.schedule.get_mut(&day).unwrap()[idx].time = time;
+                            },
+                            Err(_error) => return
+                        }
+                    }
+                    TaskAttribute::Day => {
+                        let old = self.schedule.get_mut(&day).unwrap().remove(idx);
+                        let new_day =  to_day(new).unwrap();
+                        self.add_task(new_day, old.title, old.time, old.desc);
+                    }
                 }
-            }
+            },
+            None => return
         }
     }
-
-
-    // edits the specifiec task (by target_id)
-    // should also re-order if time is edited
-    pub fn edit_task(target_id: usize) {
-        todo!();
-    }
-
 
     // displays the entire list
     pub fn display(&self) {
         println!("----------------------------------------");
         for (day, tasks) in &self.schedule {
-            println!("{}", to_string(*day));
+            println!("{}", day.to_string());
             for task in tasks {
                 task.display();
             }
         }
     }
 
-    // orders tasks by time
-    fn order_tasks(&mut self) {
-        for (_, tasks) in self.schedule.iter_mut() {
-            for swapped in 0..tasks.len() {
-                for idx in 0..tasks.len() - swapped - 1 {
-                    if tasks[idx].time > tasks[idx + 1].time {
-                        let temp = tasks[idx].clone();
-                        tasks[idx] = tasks[idx + 1].clone();
-                        tasks[idx + 1] = temp;
-                    }
+    // fetches task at specific id if it exists
+    pub fn get_task(&self, target_id: usize) -> Option<(DayOfWeek, usize)> {
+        for (day, tasks) in self.schedule.iter() {
+            for idx in 0..tasks.len() {
+                if tasks[idx].id == target_id {
+                    return Some((*day, idx));
                 }
             }
         }
+        None
     }
 
     // public accessor to return all tasks with their day and fields as owned data
     // Returns a Vec of tuples: (DayOfWeek, id, title, time, desc)
-    pub fn all_tasks(&self) -> Vec<(DayOfWeek, usize, String, f64, String)> {
-        let mut out: Vec<(DayOfWeek, usize, String, f64, String)> = Vec::new();
-        for (day, tasks) in &self.schedule {
+    pub fn all_tasks(&self) -> Vec<(DayOfWeek, usize, String, Time, String)> {
+        let mut out: Vec<(DayOfWeek, usize, String, Time, String)> = Vec::new();
+        for (_, tasks) in &self.schedule {
             for task in tasks {
-                out.push((*day, task.id, task.title.clone(), task.time, task.desc.clone()));
+                out.push((task.day, task.id, task.title.clone(), task.time, task.desc.clone()));
             }
         }
         out
     }
 }
 
-
-// checks if the time is valid
-fn check_time(time: f64) -> bool {
-    let int = time.floor();
-    let dec = time - int;
-    int >= 0.00 && int < 24.00 && dec >= 0.00 && dec < 0.60 
-}
-
-// turns DayOfWeek into equivalent string
-fn to_string(day: DayOfWeek) -> String {
-    let day_string = match day {
-        DayOfWeek::Mon => String::from("Monday"),
-        DayOfWeek::Tue => String::from("Tuesday"),
-        DayOfWeek::Wed => String::from("Wednesday"),
-        DayOfWeek::Thu => String::from("Thursday"),
-        DayOfWeek::Fri => String::from("Friday"),
-        DayOfWeek::Sat => String::from("Saturday"),
-        DayOfWeek::Sun => String::from("Sunday"),
-    };
-    day_string
+fn to_day(day: String) -> Option<DayOfWeek> {
+    match day.as_str() {
+        "Monday" => Some(DayOfWeek::Mon),
+        "Tuesday" => Some(DayOfWeek::Tue),
+        "Wednesday" => Some(DayOfWeek::Wed),
+        "Thursday" => Some(DayOfWeek::Thu),
+        "Friday" => Some(DayOfWeek::Fri),
+        "Saturday" => Some(DayOfWeek::Sat),
+        "Sunday" => Some(DayOfWeek::Sun),
+        _ => None,
+    }
 }

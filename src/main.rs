@@ -85,7 +85,7 @@ impl eframe::App for SchedulerApp {
                             if let Some(day) = idx_to_day(self.new_day_idx) {
                                 let title = std::mem::take(&mut self.new_title);
                                 let desc = std::mem::take(&mut self.new_desc);
-                                self.list.add_task(day, title, t, desc);
+                                self.list.add_task(day, title, time, desc);
                                 self.status_message = format!("Added task at {} on {}", t, to_string(day));
                                 self.new_time.clear();
                             }
