@@ -1,5 +1,5 @@
+use schedule::*;
 use eframe::egui;
-use schedule::{DayOfWeek, List, Time, SchedulerError};
 
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions::default();
@@ -46,7 +46,7 @@ impl eframe::App for SchedulerApp {
             });
 
             ui.horizontal(|ui| {
-                ui.label("Time (HH.MM):");
+                ui.label("Time (HH:MM):");
                 ui.text_edit_singleline(&mut self.new_time);
             });
 
@@ -79,13 +79,13 @@ impl eframe::App for SchedulerApp {
 
             if ui.button("Add Task").clicked() {
                 // client-side validation of time format (H.MM) to give immediate feedback
-                match Time::new(self.new_time.trim().replace(',', ".")) {
+                match Time::new(String::from(self.new_time.trim())) {
                     Ok(t) => {
                         if let Some(day) = idx_to_day(self.new_day_idx) {
                             let title = std::mem::take(&mut self.new_title);
                             let desc = std::mem::take(&mut self.new_desc);
-                            self.list.add_task(day, title, t, desc);
-                            self.status_message = format!("Added task at {} on {}", t.to_string(), day.to_string());
+                            self.list.add_task(day, title.clone(), t, desc);
+                            self.status_message = format!("Added {} @ {} on {}", title.clone(), t.to_string(), day.to_string());
                             self.new_time.clear();
                         }
                     }
@@ -103,20 +103,10 @@ impl eframe::App for SchedulerApp {
 
             // fetch all tasks from the library accessor and present them grouped by day
             let tasks = self.list.all_tasks();
-            for day in [
-                DayOfWeek::Mon,
-                DayOfWeek::Tue,
-                DayOfWeek::Wed,
-                DayOfWeek::Thu,
-                DayOfWeek::Fri,
-                DayOfWeek::Sat,
-                DayOfWeek::Sun,
-            ]
-            .iter()
-            {
-                egui::CollapsingHeader::new(to_string(*day)).show(ui, |ui| {
+            for day in all::<DayOfWeek>() {
+                egui::CollapsingHeader::new(day.to_string()).show(ui, |ui| {
                     let mut any = false;
-                    for t in tasks.iter().filter(|t| t.0 == *day) {
+                    for t in tasks.iter().filter(|t| t.0 == day) {
                         any = true;
                         // t is a reference to (DayOfWeek, usize, String, Time, String)
                         let id = t.1;
@@ -128,8 +118,17 @@ impl eframe::App for SchedulerApp {
                             ui.label(format!("{} @ {}", title, time.to_string()));
                             if ui.small_button("Remove").clicked() {
                                 self.list.remove_task(id);
-                                self.status_message = format!("Removed {}", id);
+                                self.status_message = format!("Removed {} @ {}", title, time.to_string());
                             }
+                            if ui.small_button("Edit").clicked() {
+                                self.new_title = title.clone();
+                                self.new_time = time.to_string();
+                                self.new_day_idx = day.to_idx();
+                                self.new_desc = desc.clone();
+                                self.status_message = format!("Editing {} @ {}. Click \"Add Task\" when done.", title, time.to_string());
+                                self.list.remove_task(id);
+                            }
+
                         });
                         ui.horizontal(|ui| {
                             ui.add_space(20.0);
@@ -149,29 +148,3 @@ impl eframe::App for SchedulerApp {
         });
     }
 }
-
-fn idx_to_day(idx: usize) -> Option<DayOfWeek> {
-    match idx {
-        0 => Some(DayOfWeek::Mon),
-        1 => Some(DayOfWeek::Tue),
-        2 => Some(DayOfWeek::Wed),
-        3 => Some(DayOfWeek::Thu),
-        4 => Some(DayOfWeek::Fri),
-        5 => Some(DayOfWeek::Sat),
-        6 => Some(DayOfWeek::Sun),
-        _ => None,
-    }
-}
-
-fn to_string(day: DayOfWeek) -> String {
-    match day {
-        DayOfWeek::Mon => String::from("Monday"),
-        DayOfWeek::Tue => String::from("Tuesday"),
-        DayOfWeek::Wed => String::from("Wednesday"),
-        DayOfWeek::Thu => String::from("Thursday"),
-        DayOfWeek::Fri => String::from("Friday"),
-        DayOfWeek::Sat => String::from("Saturday"),
-        DayOfWeek::Sun => String::from("Sunday"),
-    }
-}
-

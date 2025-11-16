@@ -1,6 +1,6 @@
-use indexmap::IndexMap;
-use std::{cmp::Ordering};
-use enum_iterator::{all, Sequence};
+pub use indexmap::IndexMap;
+pub use std::{cmp::Ordering};
+pub use enum_iterator::{all, Sequence};
 
 #[derive(Debug, Clone, Copy)]
 pub enum SchedulerError {
@@ -32,19 +32,32 @@ impl ToString for DayOfWeek {
     }
 }
 
-fn string_to_day(day: String) -> Option<DayOfWeek> {
-    match day.as_str() {
-        "Monday" => Some(DayOfWeek::Mon),
-        "Tuesday" => Some(DayOfWeek::Tue),
-        "Wednesday" => Some(DayOfWeek::Wed),
-        "Thursday" => Some(DayOfWeek::Thu),
-        "Friday" => Some(DayOfWeek::Fri),
-        "Saturday" => Some(DayOfWeek::Sat),
-        "Sunday" => Some(DayOfWeek::Sun),
-        _ => None,
+impl DayOfWeek {
+    pub fn to_idx(&self) -> usize {
+        match self {
+            DayOfWeek::Mon => 0,
+            DayOfWeek::Tue => 1,
+            DayOfWeek::Wed => 2,
+            DayOfWeek::Thu => 3,
+            DayOfWeek::Fri => 4,
+            DayOfWeek::Sat => 5,
+            DayOfWeek::Sun => 6,
+        }
     }
 }
 
+pub fn idx_to_day(idx: usize) -> Option<DayOfWeek> {
+    match idx {
+        0 => Some(DayOfWeek::Mon),
+        1 => Some(DayOfWeek::Tue),
+        2 => Some(DayOfWeek::Wed),
+        3 => Some(DayOfWeek::Thu),
+        4 => Some(DayOfWeek::Fri),
+        5 => Some(DayOfWeek::Sat),
+        6 => Some(DayOfWeek::Sun),
+        _ => None,
+    }
+}
 // -----------------------------------------------Time-----------------------------------------------
 
 // TIME FORMAT
@@ -83,7 +96,7 @@ impl PartialOrd for Time {
 impl Time {
     // NEW TIME -> from String input
     pub fn new(time: String) -> Result<Self, SchedulerError> {
-        let parts: Vec<&str> = time.split(".").collect();
+        let parts: Vec<&str> = time.split(":").collect();
         if parts.len() != 2 {
             return Err(SchedulerError::InvalidTimeFormat);
         }
@@ -113,7 +126,7 @@ impl Time {
 
 // CHANGED: time (f64) -> time (Time)
 #[derive(Debug, Clone)]
-struct Task {
+pub struct Task {
     id: usize,
     day: DayOfWeek,
     title: String,
@@ -129,6 +142,10 @@ impl Task {
         println!("#{} - {} @ {}", self.id, self.title, self.time.to_string());
         print!("          ");
         println!("{}", self.desc);
+    }
+
+    pub fn get_info(&self) -> (DayOfWeek, String, Time, String) {
+        (self.day, self.title.clone(), self.time, self.desc.clone())
     }
 }
 
@@ -164,43 +181,11 @@ impl List {
     pub fn remove_task(&mut self, target_id: usize) {
         let task = self.get_task(target_id);
         match task {
-            Some((day, idx)) => self.schedule.get_mut(&day).unwrap().remove(idx),
+            Some((tsk, idx)) => self.schedule.get_mut(&tsk.day).unwrap().remove(idx),
             None => return
         };
     }
-
-    // EDIT TASK
-    pub fn edit_task(&mut self, id: usize, atb: TaskAttribute, new: String) {
-        let task = self.get_task(id);
-        match task {
-            Some((day, idx)) => {
-                match atb {
-                    TaskAttribute::Title => {
-                        self.schedule.get_mut(&day).unwrap()[idx].title = new;
-                    }
-                    TaskAttribute::Desc => {
-                        self.schedule.get_mut(&day).unwrap()[idx].desc = new;
-                    }
-                    TaskAttribute::Time => {
-                        let new_time = Time::new(new);
-                        match new_time {
-                            Ok(time) => {
-                                self.schedule.get_mut(&day).unwrap()[idx].time = time;
-                            },
-                            Err(_error) => return
-                        }
-                    }
-                    TaskAttribute::Day => {
-                        let old = self.schedule.get_mut(&day).unwrap().remove(idx);
-                        let new_day =  string_to_day(new).unwrap();
-                        self.add_task(new_day, old.title, old.time, old.desc);
-                    }
-                }
-            },
-            None => return
-        }
-    }
-
+    
     // DISPLAY TASKS
     pub fn display(&self) {
         println!("----------------------------------------");
@@ -213,11 +198,11 @@ impl List {
     }
 
     // fetches task at specific id if it exists
-    pub fn get_task(&self, target_id: usize) -> Option<(DayOfWeek, usize)> {
-        for (day, tasks) in self.schedule.iter() {
+    pub fn get_task(&self, target_id: usize) -> Option<(Task, usize)> {
+        for (_, tasks) in self.schedule.iter() {
             for idx in 0..tasks.len() {
                 if tasks[idx].id == target_id {
-                    return Some((*day, idx));
+                    return Some((tasks[idx].clone(), idx));
                 }
             }
         }
